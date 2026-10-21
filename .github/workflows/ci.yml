@@ -1,0 +1,54 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Минимальное покрытие кода бэкенда тестами, %.
+  COV_MIN: "90"
+
+jobs:
+  # Линтер и все тесты бэкенда на настоящих PostgreSQL и Redis
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: leaderhelp
+          POSTGRES_PASSWORD: leaderhelp
+          POSTGRES_DB: leaderhelp_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U leaderhelp" --health-interval 5s
+          --health-timeout 3s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+    env:
+      DATABASE_URL: postgresql+psycopg://leaderhelp:leaderhelp@localhost:5432/leaderhelp_test
+      REDIS_URL: redis://localhost:6379/0
+      CELERY_EAGER: "1"
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run pytest --cov=app --cov-report=term --cov-fail-under=${COV_MIN}
