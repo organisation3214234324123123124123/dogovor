@@ -52,3 +52,44 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run pytest --cov=app --cov-report=term --cov-fail-under=${COV_MIN}
+
+  # Контракт API: docs/api/openapi.yaml совпадает с тем, что отдаёт код
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - run: cd backend && uv sync --frozen
+      - run: make openapi
+      - run: git diff --exit-code -- docs/api/openapi.yaml
+
+  # Миграции: одна голова Alembic, накатываются на пустую базу
+  migrations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: leaderhelp
+          POSTGRES_PASSWORD: leaderhelp
+          POSTGRES_DB: leaderhelp_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U leaderhelp" --health-interval 5s
+          --health-timeout 3s --health-retries 20
+    env:
+      DATABASE_URL: postgresql+psycopg://leaderhelp:leaderhelp@localhost:5432/leaderhelp_test
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - run: cd backend && uv sync --frozen
+      - run: make migrations-check
+      - run: cd backend && uv run alembic upgrade head
