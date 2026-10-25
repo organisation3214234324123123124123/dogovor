@@ -109,3 +109,37 @@ jobs:
           curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
             | tar -xz -C "$RUNNER_TEMP" gitleaks
           "$RUNNER_TEMP/gitleaks" detect --source . --redact --verbose
+
+  # Всё с нуля, как в README: docker compose up без .env, сквозной сценарий, Swagger, DDL совпадает с миграциями
+  stack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-buildx-action@v4
+      - name: docker compose up
+        run: docker compose up -d --build
+      - name: Ждём /api/v1/health (до 3 минут)
+        run: |
+          for i in $(seq 1 90); do
+            if curl -fsS http://localhost:8000/api/v1/health; then echo; exit 0; fi
+            sleep 2
+          done
+          echo "бэкенд не поднялся за 3 минуты"
+          docker compose ps -a
+          docker compose logs --tail=200
+          exit 1
+      - name: Сквозной сценарий (tests/smoke/smoke.sh)
+        run: bash tests/smoke/smoke.sh http://localhost:8000
+      - name: db/schema.sql совпадает с миграциями
+        run: |
+          bash db/dump_schema.sh
+          git diff --exit-code -- db/schema.sql
+      - name: Состояние стека при падении
+        if: failure()
+        run: |
+          docker compose ps -a
+          docker compose logs --tail=200
+      - name: docker compose down -v
+        if: always()
+        run: docker compose down -v
