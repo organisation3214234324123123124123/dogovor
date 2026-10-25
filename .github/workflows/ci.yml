@@ -39,6 +39,8 @@ jobs:
       DATABASE_URL: postgresql+psycopg://leaderhelp:leaderhelp@localhost:5432/leaderhelp_test
       REDIS_URL: redis://localhost:6379/0
       CELERY_EAGER: "1"
+      # Тестовая среда: без DEV_MODE настройки требуют SECRET_KEY 32+ символа (alembic, pytest).
+      DEV_MODE: "1"
     defaults:
       run:
         working-directory: backend
@@ -84,6 +86,7 @@ jobs:
           --health-timeout 3s --health-retries 20
     env:
       DATABASE_URL: postgresql+psycopg://leaderhelp:leaderhelp@localhost:5432/leaderhelp_test
+      DEV_MODE: "1"
     steps:
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v7
